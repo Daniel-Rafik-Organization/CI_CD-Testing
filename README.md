@@ -14,8 +14,10 @@ build, GitHub Actions on `ubuntu-latest`, deploy to EC2 over SSH (trusted
 | `ec2-connectivity.yml` | Manual SSH and Docker sanity check on EC2 |
 | `project4-baseline.yml` | Unoptimized CI/CD (no NuGet cache, Docker `--no-cache`) |
 | `project4-nuget-cache.yml` | Optimization 1: NuGet `~/.nuget/packages` cache via `actions/cache@v6` |
+| `project4-buildkit-cache.yml` | Optimization 2: BuildKit layer cache via GitHub Actions cache |
 
-Detailed numbers and run links: `BASELINE.md`, `measurements/01-nuget-dependency-cache.md`.
+Detailed numbers and run links: `BASELINE.md` and the files under
+`measurements/`.
 
 ---
 
@@ -67,7 +69,27 @@ NuGet caching **speeds up the restore command** but **does not reduce overall
 CI/CD time** here because cache download/extraction costs more than the saved
 downloads. **Not promoted** to the default workflow; baseline stays canonical.
 
-Future optimizations will get their own rows in this README and files under
+## CI/CD timing: before vs after (Optimization 2 — BuildKit cache)
+
+The warm BuildKit experiment reused an average of 13.7 of 14 eligible
+Dockerfile steps.
+
+| Metric | Before | After (warm cache) | Change |
+|---|---:|---:|---:|
+| Docker build action | 20.958 s | 10.579 s | **49.5% faster** |
+| Docker work including Buildx setup | 20.958 s | 19.497 s | **7.0% faster** |
+| Instrumented pipeline | 56.840 s | 53.185 s | **6.4% faster** |
+| GitHub job | 61.3 s | 59.0 s | **3.8% faster** |
+| Image size | 230,839,331 bytes | same | unchanged |
+
+The cold cache was expensive: 129 s job duration, including a 54.5 s initial
+cache export. Warm layer reuse roughly halved the build action, but creating a
+fresh Buildx builder added about 8.9 s per runner and consumed most of that
+saving.
+
+Detailed results: `measurements/02-docker-buildkit-cache.md`.
+
+Future optimizations will get their own rows here and files under
 `measurements/`.
 
 ---

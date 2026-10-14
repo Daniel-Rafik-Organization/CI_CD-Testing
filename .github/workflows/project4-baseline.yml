@@ -167,6 +167,7 @@ jobs:
         run: |
           now_ms=$(date +%s%3N)
           total_ms=$((now_ms - PIPELINE_START_MS))
+          echo "BASELINE_METRICS total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} test_ms=${TEST_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} image_bytes=${IMAGE_BYTES:-NA} archive_ms=${ARCHIVE_MS:-NA} archive_bytes=${ARCHIVE_BYTES:-NA} transfer_ms=${TRANSFER_MS:-NA} remote_load_ms=${REMOTE_LOAD_MS:-NA} remote_run_ms=${REMOTE_RUN_MS:-NA}"
           {
             echo "## Project 4 baseline"
             echo

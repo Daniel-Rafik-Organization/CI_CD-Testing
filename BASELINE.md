@@ -47,6 +47,43 @@ runner billing.
 - Warm test and application builds reused every eligible Dockerfile step.
 - The upstream .NET 11 image is currently an RC build and emits `NETSDK1057`.
 
+## GitHub Actions and EC2 baseline
+
+Three successful runs measured commit
+`6dee7fc7e64e811d216b9092469d928dae9ad490` with NuGet caches cleared and
+Docker `--no-cache` enabled:
+
+- Run 1: https://github.com/Daniel-Rafik-Organization/CI_CD-Testing/actions/runs/38545461317
+- Run 2: https://github.com/Daniel-Rafik-Organization/CI_CD-Testing/actions/runs/38545658166
+- Run 3: https://github.com/Daniel-Rafik-Organization/CI_CD-Testing/actions/runs/38545878165
+
+Measured results:
+
+- GitHub job duration: 64 s, 60 s, 60 s; average 61.3 s.
+- Instrumented pipeline duration: 57.117 s, 57.413 s, 55.991 s; average
+  56.840 s and median 57.117 s.
+- NuGet restore: average 4.278 s; median 4.264 s.
+- Tests: average 6.252 s; median 6.229 s; all three tests passed each run.
+- Application publish: average 1.858 s; median 1.861 s.
+- Uncached Docker build: average 20.958 s; median 21.955 s.
+- Image archive creation: average 5.238 s; median 5.247 s.
+- Transfer to EC2: average 3.563 s; median 2.454 s. Run 1 was a 6.190 s
+  network outlier.
+- EC2 image load: average 4.343 s; median 4.434 s.
+- EC2 smoke-test execution: average 0.420 s; median 0.417 s.
+- Docker image size: 230,839,331 bytes.
+- Compressed transfer size: average 101,585,744 bytes.
+- EC2 target: Ubuntu 26.04 x86-64, 2 CPUs, 1.9 GiB RAM, and 16 GiB free
+  disk before deployment.
+- EC2 CPU and memory consumption during the short-lived smoke test were not
+  measured.
+- GitHub-hosted runner cost: $0 for this public repository.
+- Additional infrastructure cost: $0; the existing EC2 instance was used.
+
+These runs form the original GitHub Actions baseline. The workflow deploys
+only trusted `main` or manually dispatched commits. Pull requests run CI on
+GitHub-hosted runners and cannot reach EC2.
+
 For comparable runs, keep source, base-image digest, builder, platform, and
 runner size fixed. Record cold-cache and warm-cache runs separately and repeat
 timed runs where practical.

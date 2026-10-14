@@ -1,0 +1,49 @@
+name: EC2 connectivity check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Inspect EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+        run: |
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$EC2_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$EC2_USER@$EC2_HOST" \
+            'set -eu
+             uname -a
+             nproc
+             free -h
+             df -h /
+             docker version
+             docker compose version'
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts

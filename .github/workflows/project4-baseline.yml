@@ -136,21 +136,24 @@ jobs:
           archive=$2
           run_id=$3
           trap 'rm -f "$archive"' EXIT
+          now_ns() {
+            python3 -c 'import time; print(time.monotonic_ns())'
+          }
 
-          load_start_ms=$(date +%s%3N)
+          load_start_ns=$(now_ns)
           gzip -dc "$archive" | docker load >/dev/null
-          load_end_ms=$(date +%s%3N)
+          load_end_ns=$(now_ns)
 
-          run_start_ms=$(date +%s%3N)
+          run_start_ns=$(now_ns)
           output=$(docker run --rm --name "project4-smoke-$run_id" "$image")
-          run_end_ms=$(date +%s%3N)
+          run_end_ns=$(now_ns)
 
           printf '%s\n' "$output"
           grep -Fq 'string: The quick brown fox jumps over the lazy dog' <<<"$output"
           grep -Fq 'reversed: god yzal eht revo spmuj xof nworb kciuq ehT' <<<"$output"
 
-          echo "METRIC_REMOTE_LOAD_MS=$((load_end_ms - load_start_ms))"
-          echo "METRIC_REMOTE_RUN_MS=$((run_end_ms - run_start_ms))"
+          echo "METRIC_REMOTE_LOAD_MS=$(((load_end_ns - load_start_ns) / 1000000))"
+          echo "METRIC_REMOTE_RUN_MS=$(((run_end_ns - run_start_ns) / 1000000))"
           REMOTE
           )
 

@@ -1,0 +1,211 @@
+name: Project 4 optimized - BuildKit cache
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: project4-dotnet
+  DOCKER_BUILD_RECORD_UPLOAD: "false"
+  DOCKER_BUILD_SUMMARY: "false"
+
+jobs:
+  optimized:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Start measurement
+        run: echo "PIPELINE_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies without host cache
+        run: |
+          dotnet nuget locals all --clear
+          start_ms=$(date +%s%3N)
+          dotnet restore MultiProjectApp.slnx --configfile NuGet.config
+          end_ms=$(date +%s%3N)
+          echo "RESTORE_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: |
+          start_ms=$(date +%s%3N)
+          dotnet test MultiProjectApp.slnx \
+            --configuration Release \
+            --no-restore \
+            --logger "trx;LogFileName=buildkit-cache.trx" \
+            --results-directory TestResults
+          end_ms=$(date +%s%3N)
+          echo "TEST_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Publish application
+        run: |
+          start_ms=$(date +%s%3N)
+          dotnet publish MultiProjectApp/MultiProjectApp.csproj \
+            --configuration Release \
+            --no-restore \
+            --output publish
+          end_ms=$(date +%s%3N)
+          echo "PUBLISH_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Start Buildx setup measurement
+        run: echo "BUILDX_SETUP_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Start Docker build measurement
+        run: |
+          now_ms=$(date +%s%3N)
+          echo "BUILDX_SETUP_MS=$((now_ms - BUILDX_SETUP_START_MS))" >> "$GITHUB_ENV"
+          echo "DOCKER_BUILD_START_MS=$now_ms" >> "$GITHUB_ENV"
+
+      - name: Build application image with BuildKit cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=project4-app
+          cache-to: type=gha,scope=project4-app,mode=max
+
+      - name: Record Docker build result
+        run: |
+          end_ms=$(date +%s%3N)
+          image_bytes=$(docker image inspect "$IMAGE_NAME:$GITHUB_SHA" --format '{{.Size}}')
+          echo "DOCKER_BUILD_MS=$((end_ms - DOCKER_BUILD_START_MS))" >> "$GITHUB_ENV"
+          echo "IMAGE_BYTES=$image_bytes" >> "$GITHUB_ENV"
+
+      - name: Create image archive
+        run: |
+          archive="$RUNNER_TEMP/project4-${GITHUB_SHA}.tar.gz"
+          start_ms=$(date +%s%3N)
+          docker save "$IMAGE_NAME:$GITHUB_SHA" | gzip -1 > "$archive"
+          end_ms=$(date +%s%3N)
+          echo "IMAGE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "ARCHIVE_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+          echo "ARCHIVE_BYTES=$(stat --format='%s' "$archive")" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Transfer and run immutable image on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+        run: |
+          image="$IMAGE_NAME:$GITHUB_SHA"
+          remote_archive="/tmp/project4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          ssh_options=(
+            -i ~/.ssh/deploy_key
+            -p "$EC2_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o ConnectTimeout=10
+          )
+
+          transfer_start_ms=$(date +%s%3N)
+          scp \
+            -i ~/.ssh/deploy_key \
+            -P "$EC2_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$IMAGE_ARCHIVE" \
+            "$EC2_USER@$EC2_HOST:$remote_archive"
+          transfer_end_ms=$(date +%s%3N)
+          echo "TRANSFER_MS=$((transfer_end_ms - transfer_start_ms))" >> "$GITHUB_ENV"
+
+          remote_output=$(
+            ssh "${ssh_options[@]}" "$EC2_USER@$EC2_HOST" \
+              bash -s -- "$image" "$remote_archive" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          image=$1
+          archive=$2
+          run_id=$3
+          trap 'rm -f "$archive"' EXIT
+          now_ns() {
+            python3 -c 'import time; print(time.monotonic_ns())'
+          }
+
+          load_start_ns=$(now_ns)
+          gzip -dc "$archive" | docker load >/dev/null
+          load_end_ns=$(now_ns)
+
+          run_start_ns=$(now_ns)
+          output=$(docker run --rm --name "project4-smoke-$run_id" "$image")
+          run_end_ns=$(now_ns)
+
+          printf '%s\n' "$output"
+          grep -Fq 'string: The quick brown fox jumps over the lazy dog' <<<"$output"
+          grep -Fq 'reversed: god yzal eht revo spmuj xof nworb kciuq ehT' <<<"$output"
+
+          echo "METRIC_REMOTE_LOAD_MS=$(((load_end_ns - load_start_ns) / 1000000))"
+          echo "METRIC_REMOTE_RUN_MS=$(((run_end_ns - run_start_ns) / 1000000))"
+          REMOTE
+          )
+
+          printf '%s\n' "$remote_output"
+          remote_load_ms=$(awk -F= '/^METRIC_REMOTE_LOAD_MS=/{print $2}' <<<"$remote_output")
+          remote_run_ms=$(awk -F= '/^METRIC_REMOTE_RUN_MS=/{print $2}' <<<"$remote_output")
+          test -n "$remote_load_ms"
+          test -n "$remote_run_ms"
+          echo "REMOTE_LOAD_MS=$remote_load_ms" >> "$GITHUB_ENV"
+          echo "REMOTE_RUN_MS=$remote_run_ms" >> "$GITHUB_ENV"
+
+      - name: Record optimized summary
+        if: always()
+        run: |
+          now_ms=$(date +%s%3N)
+          total_ms=$((now_ms - PIPELINE_START_MS))
+          echo "BUILDKIT_CACHE_METRICS total_ms=$total_ms buildx_setup_ms=${BUILDX_SETUP_MS:-NA} restore_ms=${RESTORE_MS:-NA} test_ms=${TEST_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} image_bytes=${IMAGE_BYTES:-NA} archive_ms=${ARCHIVE_MS:-NA} archive_bytes=${ARCHIVE_BYTES:-NA} transfer_ms=${TRANSFER_MS:-NA} remote_load_ms=${REMOTE_LOAD_MS:-NA} remote_run_ms=${REMOTE_RUN_MS:-NA}"
+          {
+            echo "## Project 4 - Docker BuildKit cache"
+            echo
+            echo "| Metric | Result |"
+            echo "|---|---:|"
+            echo "| Measured job duration | ${total_ms} ms |"
+            echo "| Buildx setup | ${BUILDX_SETUP_MS:-not completed} ms |"
+            echo "| Dependency restore | ${RESTORE_MS:-not completed} ms |"
+            echo "| Tests | ${TEST_MS:-not completed} ms |"
+            echo "| Application publish | ${PUBLISH_MS:-not completed} ms |"
+            echo "| Docker build, cache import/export, and image load | ${DOCKER_BUILD_MS:-not completed} ms |"
+            echo "| Image size | ${IMAGE_BYTES:-not measured} bytes |"
+            echo "| Archive creation | ${ARCHIVE_MS:-not run} ms |"
+            echo "| Archive size | ${ARCHIVE_BYTES:-not measured} bytes |"
+            echo "| Transfer to EC2 | ${TRANSFER_MS:-not run} ms |"
+            echo "| EC2 image load | ${REMOTE_LOAD_MS:-not run} ms |"
+            echo "| EC2 smoke test | ${REMOTE_RUN_MS:-not run} ms |"
+            echo
+            echo "Inspect the BuildKit step log for imported and cached layers."
+            echo
+            echo "Commit: \`$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts

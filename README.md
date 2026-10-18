@@ -15,6 +15,7 @@ build, GitHub Actions on `ubuntu-latest`, deploy to EC2 over SSH (trusted
 | `project4-baseline.yml` | Unoptimized CI/CD (no NuGet cache, Docker `--no-cache`) |
 | `project4-nuget-cache.yml` | Optimization 1: NuGet `~/.nuget/packages` cache via `actions/cache@v6` |
 | `project4-buildkit-cache.yml` | Optimization 2: BuildKit layer cache via GitHub Actions cache |
+| `project4-incremental-build.yml` | Optimization 3: build once, then test and publish with `--no-build` |
 
 Detailed numbers and run links: `BASELINE.md` and the files under
 `measurements/`.
@@ -88,6 +89,26 @@ fresh Buildx builder added about 8.9 s per runner and consumed most of that
 saving.
 
 Detailed results: `measurements/02-docker-buildkit-cache.md`.
+
+## CI/CD timing: before vs after (Optimization 3 — incremental build reuse)
+
+The experiment explicitly builds the solution once, then tests and publishes
+the existing Release outputs.
+
+| Metric | Before | After | Change |
+|---|---:|---:|---:|
+| Test command | 6.252 s | 3.538 s | **43.4% faster** |
+| Publish command | 1.858 s | 0.767 s | **58.7% faster** |
+| Explicit build | — | 3.861 s | new work |
+| Combined compile/test/publish | 8.110 s | 8.166 s | **0.7% slower** |
+| Instrumented pipeline | 56.840 s | 57.523 s | **1.2% slower** |
+| GitHub job | 61.3 s | 63.0 s | **2.8% slower** |
+
+The faster test and publish commands are not a net saving: compilation moved
+into the explicit build step. The baseline already lets MSBuild reuse current
+outputs within the same workspace.
+
+Detailed results: `measurements/03-incremental-dotnet-build.md`.
 
 Future optimizations will get their own rows here and files under
 `measurements/`.

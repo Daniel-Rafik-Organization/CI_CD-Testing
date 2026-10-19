@@ -155,6 +155,28 @@ the promoted pipeline.
 
 Detailed results: `measurements/05-build-artifacts-between-jobs.md`.
 
+## CI/CD timing: before vs after (Optimization 6 — multi-stage build)
+
+The single-stage control retains the SDK, source, NuGet state, and build
+outputs. The existing multi-stage Dockerfile copies only published output into
+the runtime image.
+
+| Metric | Single stage | Multi-stage | Change |
+|---|---:|---:|---:|
+| Final image | 867.9 MB | 230.8 MB | **73.4% smaller** |
+| Compressed artifact | 364.0 MB | 101.6 MB | **72.1% smaller** |
+| Docker build | 21.888 s | 19.530 s | **10.8% faster** |
+| Archive creation | 15.729 s | 5.233 s | **66.7% faster** |
+| EC2 transfer | 12.256 s | 4.286 s | **65.0% faster** |
+| EC2 image load (median) | 14.887 s | 4.282 s | **71.2% faster** |
+| Workflow wall time (median) | 138 s | 69 s | **50.0% faster** |
+
+One single-stage artifact download was a large network outlier, so medians are
+used for the end-to-end comparison. The multi-stage Dockerfile remains the
+default; `Dockerfile.single-stage` is only a learning control.
+
+Detailed results: `measurements/06-docker-multi-stage-build.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 

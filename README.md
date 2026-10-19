@@ -16,6 +16,8 @@ build, GitHub Actions on `ubuntu-latest`, deploy to EC2 over SSH (trusted
 | `project4-nuget-cache.yml` | Optimization 1: NuGet `~/.nuget/packages` cache via `actions/cache@v6` |
 | `project4-buildkit-cache.yml` | Optimization 2: BuildKit layer cache via GitHub Actions cache |
 | `project4-incremental-build.yml` | Optimization 3: build once, then test and publish with `--no-build` |
+| `project4-jobs-sequential.yml` | Topic 4 sequential multi-job control |
+| `project4-jobs-parallel.yml` | Optimization 4: test and image jobs run concurrently |
 
 Detailed numbers and run links: `BASELINE.md` and the files under
 `measurements/`.
@@ -109,6 +111,26 @@ into the explicit build step. The baseline already lets MSBuild reuse current
 outputs within the same workspace.
 
 Detailed results: `measurements/03-incremental-dotnet-build.md`.
+
+## CI/CD timing: before vs after (Optimization 4 — parallel jobs)
+
+Both workflows use identical jobs and image-artifact handoff. Only the job
+dependency graph changes.
+
+| Metric | Sequential control | Parallel jobs | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 97.0 s | 64.0 s | **34.0% faster** |
+| Test job | 20.278 s | 19.807 s | comparable |
+| Image job | 47.861 s | 44.005 s | normal run variance |
+| Deployment job | 12.044 s | 9.818 s | network variance |
+| Peak runner concurrency | 1 | 2 | increased |
+| Image size | 230,839,331 bytes | same | unchanged |
+
+The reliable improvement is the 33-second reduction in elapsed time from
+overlapping test and image work. Parallelism does not inherently reduce total
+compute; observed compute differences include runner and network variation.
+
+Detailed results: `measurements/04-parallel-jobs.md`.
 
 Future optimizations will get their own rows here and files under
 `measurements/`.

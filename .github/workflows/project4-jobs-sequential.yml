@@ -1,0 +1,240 @@
+name: Project 4 control - Sequential jobs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: project4-dotnet
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Start test-job measurement
+        run: echo "JOB_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies without cache
+        run: |
+          dotnet nuget locals all --clear
+          start_ms=$(date +%s%3N)
+          dotnet restore MultiProjectApp.slnx --configfile NuGet.config
+          end_ms=$(date +%s%3N)
+          echo "RESTORE_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Run tests
+        run: |
+          start_ms=$(date +%s%3N)
+          dotnet test MultiProjectApp.slnx \
+            --configuration Release \
+            --no-restore \
+            --logger "trx;LogFileName=sequential-jobs.trx" \
+            --results-directory TestResults
+          end_ms=$(date +%s%3N)
+          echo "TEST_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Record test-job metrics
+        if: always()
+        run: |
+          total_ms=$(($(date +%s%3N) - JOB_START_MS))
+          echo "SEQUENTIAL_TEST_JOB_METRICS total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} test_ms=${TEST_MS:-NA}"
+
+  build-image:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Start image-job measurement
+        run: echo "JOB_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore dependencies without cache
+        run: |
+          dotnet nuget locals all --clear
+          start_ms=$(date +%s%3N)
+          dotnet restore MultiProjectApp.slnx --configfile NuGet.config
+          end_ms=$(date +%s%3N)
+          echo "RESTORE_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Publish application
+        run: |
+          start_ms=$(date +%s%3N)
+          dotnet publish MultiProjectApp/MultiProjectApp.csproj \
+            --configuration Release \
+            --no-restore \
+            --output publish
+          end_ms=$(date +%s%3N)
+          echo "PUBLISH_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+
+      - name: Build application image without cache
+        run: |
+          start_ms=$(date +%s%3N)
+          docker build \
+            --no-cache \
+            --tag "$IMAGE_NAME:$GITHUB_SHA" \
+            .
+          end_ms=$(date +%s%3N)
+          image_bytes=$(docker image inspect "$IMAGE_NAME:$GITHUB_SHA" --format '{{.Size}}')
+          echo "DOCKER_BUILD_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+          echo "IMAGE_BYTES=$image_bytes" >> "$GITHUB_ENV"
+
+      - name: Create image archive
+        run: |
+          archive="$RUNNER_TEMP/project4-${GITHUB_SHA}.tar.gz"
+          start_ms=$(date +%s%3N)
+          docker save "$IMAGE_NAME:$GITHUB_SHA" | gzip -1 > "$archive"
+          end_ms=$(date +%s%3N)
+          echo "IMAGE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "ARCHIVE_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
+          echo "ARCHIVE_BYTES=$(stat --format='%s' "$archive")" >> "$GITHUB_ENV"
+
+      - name: Start artifact-upload measurement
+        run: echo "ARTIFACT_UPLOAD_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Upload immutable image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project4-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/project4-${{ github.sha }}.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Record image-job metrics
+        if: always()
+        run: |
+          now_ms=$(date +%s%3N)
+          upload_ms=$((now_ms - ARTIFACT_UPLOAD_START_MS))
+          total_ms=$((now_ms - JOB_START_MS))
+          echo "SEQUENTIAL_IMAGE_JOB_METRICS total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} archive_ms=${ARCHIVE_MS:-NA} artifact_upload_ms=$upload_ms image_bytes=${IMAGE_BYTES:-NA} archive_bytes=${ARCHIVE_BYTES:-NA}"
+
+  deploy:
+    needs: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Start deploy-job measurement
+        run: |
+          echo "JOB_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+          echo "ARTIFACT_DOWNLOAD_START_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+
+      - name: Download immutable image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: project4-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/image
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          now_ms=$(date +%s%3N)
+          echo "ARTIFACT_DOWNLOAD_MS=$((now_ms - ARTIFACT_DOWNLOAD_START_MS))" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Transfer and run immutable image on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+        run: |
+          image="$IMAGE_NAME:$GITHUB_SHA"
+          archive="$RUNNER_TEMP/image/project4-${GITHUB_SHA}.tar.gz"
+          remote_archive="/tmp/project4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
+          ssh_options=(
+            -i ~/.ssh/deploy_key
+            -p "$EC2_PORT"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o ConnectTimeout=10
+          )
+
+          transfer_start_ms=$(date +%s%3N)
+          scp \
+            -i ~/.ssh/deploy_key \
+            -P "$EC2_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$archive" \
+            "$EC2_USER@$EC2_HOST:$remote_archive"
+          transfer_end_ms=$(date +%s%3N)
+          echo "TRANSFER_MS=$((transfer_end_ms - transfer_start_ms))" >> "$GITHUB_ENV"
+
+          remote_output=$(
+            ssh "${ssh_options[@]}" "$EC2_USER@$EC2_HOST" \
+              bash -s -- "$image" "$remote_archive" "$GITHUB_RUN_ID" <<'REMOTE'
+          set -euo pipefail
+          image=$1
+          archive=$2
+          run_id=$3
+          trap 'rm -f "$archive"' EXIT
+          now_ns() {
+            python3 -c 'import time; print(time.monotonic_ns())'
+          }
+
+          load_start_ns=$(now_ns)
+          gzip -dc "$archive" | docker load >/dev/null
+          load_end_ns=$(now_ns)
+
+          run_start_ns=$(now_ns)
+          output=$(docker run --rm --name "project4-smoke-$run_id" "$image")
+          run_end_ns=$(now_ns)
+
+          printf '%s\n' "$output"
+          grep -Fq 'string: The quick brown fox jumps over the lazy dog' <<<"$output"
+          grep -Fq 'reversed: god yzal eht revo spmuj xof nworb kciuq ehT' <<<"$output"
+
+          echo "METRIC_REMOTE_LOAD_MS=$(((load_end_ns - load_start_ns) / 1000000))"
+          echo "METRIC_REMOTE_RUN_MS=$(((run_end_ns - run_start_ns) / 1000000))"
+          REMOTE
+          )
+
+          printf '%s\n' "$remote_output"
+          remote_load_ms=$(awk -F= '/^METRIC_REMOTE_LOAD_MS=/{print $2}' <<<"$remote_output")
+          remote_run_ms=$(awk -F= '/^METRIC_REMOTE_RUN_MS=/{print $2}' <<<"$remote_output")
+          test -n "$remote_load_ms"
+          test -n "$remote_run_ms"
+          echo "REMOTE_LOAD_MS=$remote_load_ms" >> "$GITHUB_ENV"
+          echo "REMOTE_RUN_MS=$remote_run_ms" >> "$GITHUB_ENV"
+
+      - name: Record deploy-job metrics
+        if: always()
+        run: |
+          total_ms=$(($(date +%s%3N) - JOB_START_MS))
+          echo "SEQUENTIAL_DEPLOY_JOB_METRICS total_ms=$total_ms artifact_download_ms=${ARTIFACT_DOWNLOAD_MS:-NA} transfer_ms=${TRANSFER_MS:-NA} remote_load_ms=${REMOTE_LOAD_MS:-NA} remote_run_ms=${REMOTE_RUN_MS:-NA}"
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts

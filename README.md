@@ -18,6 +18,7 @@ build, GitHub Actions on `ubuntu-latest`, deploy to EC2 over SSH (trusted
 | `project4-incremental-build.yml` | Optimization 3: build once, then test and publish with `--no-build` |
 | `project4-jobs-sequential.yml` | Topic 4 sequential multi-job control |
 | `project4-jobs-parallel.yml` | Default CI/CD: test and image jobs run concurrently |
+| `project4-no-artifact-control.yml` | Topic 5 control: deployment job rebuilds the image |
 
 Detailed numbers and run links: `BASELINE.md` and the files under
 `measurements/`.
@@ -133,6 +134,26 @@ This dependency graph was promoted to the default pipeline after approval.
 Pull requests do not deploy to EC2.
 
 Detailed results: `measurements/04-parallel-jobs.md`.
+
+## CI/CD timing: before vs after (Optimization 5 — artifact reuse)
+
+The control rebuilds the validated image on the deployment runner. The
+optimized workflow uploads and downloads the exact image built earlier.
+
+| Metric | Rebuild in deploy job | Reuse artifact | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 87.667 s | 64.333 s | **26.6% faster** |
+| Total runner execution | 110.0 s | 87.0 s | **20.9% lower** |
+| Duplicate rebuild | 22.035 s | — | eliminated |
+| Artifact upload + download | — | 3.887 s | added |
+| Image size | 230,839,331 bytes | same | unchanged |
+
+Artifact reuse saved approximately 18.1 seconds versus rebuilding, before
+checkout overhead and run variance. It also guarantees that deployment uses
+the exact image produced by the validated build job. Artifact reuse remains in
+the promoted pipeline.
+
+Detailed results: `measurements/05-build-artifacts-between-jobs.md`.
 
 Future optimizations will get their own rows here and files under
 `measurements/`.

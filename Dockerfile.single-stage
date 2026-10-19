@@ -1,0 +1,23 @@
+# Single-stage control for the multi-stage build experiment.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:11.0
+ARG TARGETARCH
+WORKDIR /source
+
+# Keep dependency and source ordering equivalent to the multi-stage Dockerfile.
+COPY --link Directory.Build.props .
+COPY --link NuGet.config .
+COPY --link MultiProjectApp/*.csproj MultiProjectApp/
+COPY --link LibFoo/*.csproj LibFoo/
+COPY --link LibBar/*.csproj LibBar/
+RUN dotnet restore -a $TARGETARCH MultiProjectApp/MultiProjectApp.csproj
+
+COPY --link MultiProjectApp/ MultiProjectApp/
+COPY --link LibFoo/ LibFoo/
+COPY --link LibBar/ LibBar/
+
+WORKDIR /source/MultiProjectApp
+RUN dotnet publish -a $TARGETARCH --no-restore -o /app
+
+# The SDK, source, NuGet state, and build outputs remain in this final image.
+WORKDIR /app
+ENTRYPOINT ["dotnet", "MultiProjectApp.dll"]

@@ -8,12 +8,22 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      dockerfile:
+        description: Dockerfile used for the image-size experiment
+        required: true
+        default: Dockerfile
+        type: choice
+        options:
+          - Dockerfile
+          - Dockerfile.single-stage
 
 permissions:
   contents: read
 
 env:
   IMAGE_NAME: project4-dotnet
+  DOCKERFILE: ${{ inputs.dockerfile || 'Dockerfile' }}
 
 jobs:
   test:
@@ -100,6 +110,7 @@ jobs:
           start_ms=$(date +%s%3N)
           docker build \
             --no-cache \
+            --file "$DOCKERFILE" \
             --tag "$IMAGE_NAME:$GITHUB_SHA" \
             .
           end_ms=$(date +%s%3N)
@@ -134,7 +145,7 @@ jobs:
           now_ms=$(date +%s%3N)
           upload_ms=$((now_ms - ARTIFACT_UPLOAD_START_MS))
           total_ms=$((now_ms - JOB_START_MS))
-          echo "PARALLEL_IMAGE_JOB_METRICS total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} archive_ms=${ARCHIVE_MS:-NA} artifact_upload_ms=$upload_ms image_bytes=${IMAGE_BYTES:-NA} archive_bytes=${ARCHIVE_BYTES:-NA}"
+          echo "PARALLEL_IMAGE_JOB_METRICS dockerfile=$DOCKERFILE total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} archive_ms=${ARCHIVE_MS:-NA} artifact_upload_ms=$upload_ms image_bytes=${IMAGE_BYTES:-NA} archive_bytes=${ARCHIVE_BYTES:-NA}"
 
   deploy:
     needs:

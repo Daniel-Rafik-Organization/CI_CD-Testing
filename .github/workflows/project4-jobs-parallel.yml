@@ -1,6 +1,12 @@
-name: Project 4 optimized - Parallel jobs
+name: Project 4 CI/CD - Parallel jobs
 
 on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -134,6 +140,7 @@ jobs:
     needs:
       - test
       - build-image
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

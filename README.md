@@ -12,12 +12,12 @@ build, GitHub Actions on `ubuntu-latest`, deploy to EC2 over SSH (trusted
 | Workflow | Purpose |
 |---|---|
 | `ec2-connectivity.yml` | Manual SSH and Docker sanity check on EC2 |
-| `project4-baseline.yml` | Unoptimized CI/CD (no NuGet cache, Docker `--no-cache`) |
+| `project4-baseline.yml` | Preserved manual unoptimized CI/CD baseline |
 | `project4-nuget-cache.yml` | Optimization 1: NuGet `~/.nuget/packages` cache via `actions/cache@v6` |
 | `project4-buildkit-cache.yml` | Optimization 2: BuildKit layer cache via GitHub Actions cache |
 | `project4-incremental-build.yml` | Optimization 3: build once, then test and publish with `--no-build` |
 | `project4-jobs-sequential.yml` | Topic 4 sequential multi-job control |
-| `project4-jobs-parallel.yml` | Optimization 4: test and image jobs run concurrently |
+| `project4-jobs-parallel.yml` | Default CI/CD: test and image jobs run concurrently |
 
 Detailed numbers and run links: `BASELINE.md` and the files under
 `measurements/`.
@@ -129,6 +129,8 @@ dependency graph changes.
 The reliable improvement is the 33-second reduction in elapsed time from
 overlapping test and image work. Parallelism does not inherently reduce total
 compute; observed compute differences include runner and network variation.
+This dependency graph was promoted to the default pipeline after approval.
+Pull requests do not deploy to EC2.
 
 Detailed results: `measurements/04-parallel-jobs.md`.
 

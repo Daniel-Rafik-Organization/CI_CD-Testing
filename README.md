@@ -177,6 +177,25 @@ default; `Dockerfile.single-stage` is only a learning control.
 
 Detailed results: `measurements/06-docker-multi-stage-build.md`.
 
+## CI/CD timing: before vs after (Optimization 7 — layer ordering)
+
+Each run populated a local Docker cache, changed only application source, then
+measured the rebuild.
+
+| Metric | Poor ordering | Manifest-first ordering | Change |
+|---|---:|---:|---:|
+| Source-change rebuild | 5.824 s | 4.316 s | **25.9% faster** |
+| Cached steps | 4 | 8 | doubled |
+| Restore after source change | 3 of 3 runs | 0 of 3 runs | eliminated |
+| Image size | 230,839,331 bytes | same | unchanged |
+
+Correct ordering copies dependency manifests and restores before copying
+frequently changing source. Total experiment duration was affected by unrelated
+first-build and network variation, so only the isolated rebuild is attributed
+to layer ordering.
+
+Detailed results: `measurements/07-docker-layer-ordering.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 

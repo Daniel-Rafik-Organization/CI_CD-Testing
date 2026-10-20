@@ -1,0 +1,20 @@
+# Deliberately poor layer ordering for the layer-invalidation experiment.
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:11.0 AS build
+ARG TARGETARCH
+WORKDIR /source
+
+# Source is copied before restore. Any source change invalidates restore.
+COPY --link Directory.Build.props .
+COPY --link NuGet.config .
+COPY --link MultiProjectApp/ MultiProjectApp/
+COPY --link LibFoo/ LibFoo/
+COPY --link LibBar/ LibBar/
+RUN dotnet restore -a $TARGETARCH MultiProjectApp/MultiProjectApp.csproj
+
+WORKDIR /source/MultiProjectApp
+RUN dotnet publish -a $TARGETARCH --no-restore -o /app
+
+FROM mcr.microsoft.com/dotnet/runtime:11.0 AS final
+WORKDIR /app
+COPY --link --from=build /app .
+ENTRYPOINT ["dotnet", "MultiProjectApp.dll"]

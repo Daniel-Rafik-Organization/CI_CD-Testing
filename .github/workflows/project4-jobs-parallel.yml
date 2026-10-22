@@ -176,8 +176,11 @@ jobs:
             .
           end_ms=$(date +%s%3N)
           image_bytes=$(docker image inspect "$IMAGE_NAME:$GITHUB_SHA" --format '{{.Size}}')
+          image_id=$(docker image inspect "$IMAGE_NAME:$GITHUB_SHA" --format '{{.Id}}')
+          printf '%s\n' "$image_id" > "$RUNNER_TEMP/project4-${GITHUB_SHA}.image-id"
           echo "DOCKER_BUILD_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
           echo "IMAGE_BYTES=$image_bytes" >> "$GITHUB_ENV"
+          echo "IMAGE_ID=$image_id" >> "$GITHUB_ENV"
 
       - name: Create image archive
         run: |
@@ -195,7 +198,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: project4-image-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/project4-${{ github.sha }}.tar.gz
+          path: |
+            ${{ runner.temp }}/project4-${{ github.sha }}.tar.gz
+            ${{ runner.temp }}/project4-${{ github.sha }}.image-id
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
@@ -206,7 +211,7 @@ jobs:
           now_ms=$(date +%s%3N)
           upload_ms=$((now_ms - ARTIFACT_UPLOAD_START_MS))
           total_ms=$((now_ms - JOB_START_MS))
-          echo "PARALLEL_IMAGE_JOB_METRICS dockerfile=$DOCKERFILE total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} archive_ms=${ARCHIVE_MS:-NA} artifact_upload_ms=$upload_ms image_bytes=${IMAGE_BYTES:-NA} archive_bytes=${ARCHIVE_BYTES:-NA}"
+          echo "PARALLEL_IMAGE_JOB_METRICS dockerfile=$DOCKERFILE total_ms=$total_ms restore_ms=${RESTORE_MS:-NA} publish_ms=${PUBLISH_MS:-NA} docker_build_ms=${DOCKER_BUILD_MS:-NA} archive_ms=${ARCHIVE_MS:-NA} artifact_upload_ms=$upload_ms image_bytes=${IMAGE_BYTES:-NA} archive_bytes=${ARCHIVE_BYTES:-NA} image_id=${IMAGE_ID:-NA}"
 
   deploy:
     needs:
@@ -248,6 +253,9 @@ jobs:
         run: |
           image="$IMAGE_NAME:$GITHUB_SHA"
           archive="$RUNNER_TEMP/image/project4-${GITHUB_SHA}.tar.gz"
+          image_id_file="$RUNNER_TEMP/image/project4-${GITHUB_SHA}.image-id"
+          expected_image_id=$(<"$image_id_file")
+          [[ "$expected_image_id" =~ ^sha256:[0-9a-f]{64}$ ]]
           remote_archive="/tmp/project4-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tar.gz"
           ssh_options=(
             -i ~/.ssh/deploy_key
@@ -273,11 +281,12 @@ jobs:
 
           remote_output=$(
             ssh "${ssh_options[@]}" "$EC2_USER@$EC2_HOST" \
-              bash -s -- "$image" "$remote_archive" "$GITHUB_RUN_ID" <<'REMOTE'
+              bash -s -- "$image" "$remote_archive" "$GITHUB_RUN_ID" "$expected_image_id" <<'REMOTE'
           set -euo pipefail
           image=$1
           archive=$2
           run_id=$3
+          expected_image_id=$4
           trap 'rm -f "$archive"' EXIT
           now_ns() {
             python3 -c 'import time; print(time.monotonic_ns())'
@@ -286,6 +295,11 @@ jobs:
           load_start_ns=$(now_ns)
           gzip -dc "$archive" | docker load >/dev/null
           load_end_ns=$(now_ns)
+
+          verify_start_ns=$(now_ns)
+          actual_image_id=$(docker image inspect "$image" --format '{{.Id}}')
+          test "$actual_image_id" = "$expected_image_id"
+          verify_end_ns=$(now_ns)
 
           run_start_ns=$(now_ns)
           output=$(docker run --rm --name "project4-smoke-$run_id" "$image")
@@ -296,23 +310,27 @@ jobs:
           grep -Fq 'reversed: god yzal eht revo spmuj xof nworb kciuq ehT' <<<"$output"
 
           echo "METRIC_REMOTE_LOAD_MS=$(((load_end_ns - load_start_ns) / 1000000))"
+          echo "METRIC_REMOTE_VERIFY_MS=$(((verify_end_ns - verify_start_ns) / 1000000))"
           echo "METRIC_REMOTE_RUN_MS=$(((run_end_ns - run_start_ns) / 1000000))"
           REMOTE
           )
 
           printf '%s\n' "$remote_output"
           remote_load_ms=$(awk -F= '/^METRIC_REMOTE_LOAD_MS=/{print $2}' <<<"$remote_output")
+          remote_verify_ms=$(awk -F= '/^METRIC_REMOTE_VERIFY_MS=/{print $2}' <<<"$remote_output")
           remote_run_ms=$(awk -F= '/^METRIC_REMOTE_RUN_MS=/{print $2}' <<<"$remote_output")
           test -n "$remote_load_ms"
+          test -n "$remote_verify_ms"
           test -n "$remote_run_ms"
           echo "REMOTE_LOAD_MS=$remote_load_ms" >> "$GITHUB_ENV"
+          echo "REMOTE_VERIFY_MS=$remote_verify_ms" >> "$GITHUB_ENV"
           echo "REMOTE_RUN_MS=$remote_run_ms" >> "$GITHUB_ENV"
 
       - name: Record deploy-job metrics
         if: always()
         run: |
           total_ms=$(($(date +%s%3N) - JOB_START_MS))
-          echo "PARALLEL_DEPLOY_JOB_METRICS total_ms=$total_ms artifact_download_ms=${ARTIFACT_DOWNLOAD_MS:-NA} transfer_ms=${TRANSFER_MS:-NA} remote_load_ms=${REMOTE_LOAD_MS:-NA} remote_run_ms=${REMOTE_RUN_MS:-NA}"
+          echo "PARALLEL_DEPLOY_JOB_METRICS total_ms=$total_ms artifact_download_ms=${ARTIFACT_DOWNLOAD_MS:-NA} transfer_ms=${TRANSFER_MS:-NA} remote_load_ms=${REMOTE_LOAD_MS:-NA} remote_verify_ms=${REMOTE_VERIFY_MS:-NA} remote_run_ms=${REMOTE_RUN_MS:-NA}"
 
       - name: Remove SSH material
         if: always()

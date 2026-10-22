@@ -9,3 +9,6 @@ TestResults/
 *.trx
 .env
 .env.*
+
+project1-node-optimization-lab/node_modules/
+project1-node-optimization-lab/dist/

@@ -1,0 +1,15 @@
+{
+  "name": "project1-node-optimization-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal Node.js app for CI/CD optimization exercises",
+  "main": "src/greeting.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "lint": "node --check src/greeting.js && node --check scripts/build.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

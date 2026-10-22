@@ -1,0 +1,67 @@
+name: Project 4 EC2 cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+
+      - name: Remove Project 4 containers, images, and temp files
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          EC2_PORT: ${{ vars.EC2_PORT }}
+        run: |
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -p "$EC2_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=10 \
+            "$EC2_USER@$EC2_HOST" \
+            'set -eu
+             echo "Before cleanup:"
+             docker ps -a --filter name=project4-smoke --format "{{.Names}}" || true
+             docker images project4-dotnet --format "{{.Repository}}:{{.Tag}} {{.ID}}" || true
+             ls -1 /tmp/project4-*.tar.gz 2>/dev/null || true
+
+             containers=$(docker ps -aq --filter name=project4-smoke || true)
+             if [ -n "${containers:-}" ]; then
+               docker rm -f $containers
+             fi
+
+             images=$(docker images --format "{{.ID}}" project4-dotnet || true)
+             if [ -n "${images:-}" ]; then
+               docker rmi -f $images || true
+             fi
+
+             rm -f /tmp/project4-*.tar.gz
+
+             docker builder prune -f --filter "label=project4" 2>/dev/null || true
+             docker image prune -f
+
+             echo "After cleanup:"
+             docker ps -a --filter name=project4-smoke --format "{{.Names}}" || true
+             docker images project4-dotnet --format "{{.Repository}}:{{.Tag}}" || true
+             ls -1 /tmp/project4-*.tar.gz 2>/dev/null || echo "no project4 archives in /tmp"'
+
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/known_hosts

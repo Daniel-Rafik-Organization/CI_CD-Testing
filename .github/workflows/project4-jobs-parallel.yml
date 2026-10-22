@@ -298,7 +298,11 @@ jobs:
 
           verify_start_ns=$(now_ns)
           actual_image_id=$(docker image inspect "$image" --format '{{.Id}}')
-          test "$actual_image_id" = "$expected_image_id"
+          if [[ "$actual_image_id" != "$expected_image_id" ]]; then
+            printf 'Image identity mismatch: expected=%s actual=%s\n' \
+              "$expected_image_id" "$actual_image_id" >&2
+            exit 1
+          fi
           verify_end_ns=$(now_ns)
 
           run_start_ns=$(now_ns)

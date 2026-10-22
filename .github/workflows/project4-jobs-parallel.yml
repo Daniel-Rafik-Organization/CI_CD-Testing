@@ -41,6 +41,14 @@ on:
         options:
           - Dockerfile
           - Dockerfile.single-stage
+      test_runner:
+        description: Runner used by the test job
+        required: true
+        default: ubuntu-latest
+        type: choice
+        options:
+          - ubuntu-latest
+          - ubuntu-slim
 
 permissions:
   contents: read
@@ -55,7 +63,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.test_runner || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:

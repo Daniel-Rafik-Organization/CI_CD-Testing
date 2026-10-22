@@ -258,6 +258,25 @@ retain `ubuntu-latest`. A manual runner selector remains for learning.
 
 Detailed results: `measurements/10-right-sized-runners.md`.
 
+## CI/CD timing: before vs after (Optimization 11 — test parallelization)
+
+The three-test suite was compared as one test job and as two parallel matrix
+jobs split by test class. No artificial delays were added.
+
+| Three-run average | Single job | Two shards | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 75.3 s | 73.0 s | 3.1% lower, unrelated path variance |
+| Test-stage elapsed time | 22.3 s | 25.7 s | **14.9% slower** |
+| Test-runner execution | 22.3 s | 49.0 s | **119.4% higher** |
+| Critical test command | 4.7 s | 6.0 s | **28.6% slower** |
+
+The image/deployment path determined end-to-end time, so its variance cannot
+be credited to test sharding. Duplicate runner setup, restore, compilation,
+and discovery outweighed parallel execution of millisecond-scale tests.
+Single-job testing remains the default; sharding remains a manual control.
+
+Detailed results: `measurements/11-test-parallelization.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 

@@ -238,6 +238,26 @@ allowed to complete after newer runs.
 
 Detailed results: `measurements/09-concurrency-control.md`.
 
+## CI/CD timing: before vs after (Optimization 10 — runner sizing)
+
+The lightweight test job was compared on the free public-repository
+`ubuntu-latest` runner (4 vCPU, 16 GB) and `ubuntu-slim` runner (1 vCPU, 5 GB).
+Image and deployment jobs were unchanged.
+
+| Three-run average | `ubuntu-latest` | `ubuntu-slim` | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 76.0 s | 88.3 s | **16.2% slower** |
+| Total runner execution | 93.0 s | 128.3 s | **38.0% higher** |
+| Test job | 24.0 s | 57.3 s | **138.9% slower** |
+| Estimated allocated test CPU capacity | 96 vCPU-s | 57.3 vCPU-s | **40.3% lower** |
+| Actual Actions cost | $0 | $0 | unchanged |
+
+The slim runner reduced allocated capacity but provided no cost saving and
+occasionally extended the critical path. It was not promoted; automatic runs
+retain `ubuntu-latest`. A manual runner selector remains for learning.
+
+Detailed results: `measurements/10-right-sized-runners.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 

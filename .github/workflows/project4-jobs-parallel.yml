@@ -49,6 +49,14 @@ on:
         options:
           - ubuntu-latest
           - ubuntu-slim
+      test_mode:
+        description: Run all tests together or split test classes across jobs
+        required: true
+        default: single
+        type: choice
+        options:
+          - single
+          - sharded
 
 permissions:
   contents: read
@@ -65,6 +73,10 @@ jobs:
   test:
     runs-on: ${{ inputs.test_runner || 'ubuntu-latest' }}
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.test_mode == 'sharded' && '["string-library","string-utils"]' || '["all"]') }}
 
     steps:
       - name: Start test-job measurement
@@ -91,11 +103,24 @@ jobs:
       - name: Run tests
         run: |
           start_ms=$(date +%s%3N)
-          dotnet test MultiProjectApp.slnx \
-            --configuration Release \
-            --no-restore \
-            --logger "trx;LogFileName=parallel-jobs.trx" \
+          test_args=(
+            MultiProjectApp.slnx
+            --configuration Release
+            --no-restore
+            --logger "trx;LogFileName=${{ matrix.shard }}.trx"
             --results-directory TestResults
+          )
+
+          case "${{ matrix.shard }}" in
+            string-library)
+              test_args+=(--filter "FullyQualifiedName~Tests.StringLibraryTests")
+              ;;
+            string-utils)
+              test_args+=(--filter "FullyQualifiedName~Tests.StringUtilsTests")
+              ;;
+          esac
+
+          dotnet test "${test_args[@]}"
           end_ms=$(date +%s%3N)
           echo "TEST_MS=$((end_ms - start_ms))" >> "$GITHUB_ENV"
 

@@ -277,8 +277,27 @@ Single-job testing remains the default; sharding remains a manual control.
 
 Detailed results: `measurements/11-test-parallelization.md`.
 
-Future optimizations will get their own rows here and files under
-`measurements/`.
+## CI/CD timing: before vs after (Optimization 12 — image reuse)
+
+Topic 5 measured rebuilding in deployment versus reusing the built image:
+
+| Three-run average | Rebuild in deploy | Reuse image artifact | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 87.7 s | 64.3 s | **26.6% faster** |
+| Total runner execution | 110.0 s | 87.0 s | **20.9% lower** |
+| Duplicate Docker build | 22.0 s | 0 s | eliminated |
+
+The final workflow now also hashes the image archive and verifies the received
+copy on EC2 before loading it. Three runs succeeded. Digest creation averaged
+77ms and EC2 verification averaged 1,004ms, adding approximately 1.08 seconds
+for explicit transport identity verification.
+
+Docker image IDs were not suitable across the runner's image store and EC2's
+Docker 29 containerd store, so the portable archive SHA-256 is used instead.
+
+Detailed results: `measurements/12-artifact-and-image-reuse.md`.
+
+All 12 optimization topics have detailed records under `measurements/`.
 
 ---
 

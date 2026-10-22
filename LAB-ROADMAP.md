@@ -5,32 +5,23 @@
 - **Project 4 — .NET Docker sample**: all 12 topics measured and documented under
   `measurements/` and `README.md`.
 
-## Remaining projects
+## Remaining projects (deferred)
 
-| Project | Focus |
+Projects 1–3, 5, and 6 from the original lab plan were skipped by request.
+Project 4 measurements are the evidence base for the skills below.
+
+## Cursor Agent Skills (delivered)
+
+Personal skills installed on this machine:
+
+| Skill | Path |
 |---|---|
-| 1 — Node.js + starter workflow | npm cache, parallel jobs, artifacts, path filters, concurrency |
-| 2 — Docker publish workflow | BuildKit cache, image publish, multi-stage, layer order, digest reuse |
-| 3 — Next.js (isolated exercise) | incremental build, parallel jobs, test parallelization, path filters |
-| 5 — Moby BuildKit examples | cache mounts, import/export, layer invalidation |
-| 6 — CI-Optimization | test execution, artifacts, parallelization, feedback time |
+| `optimize-github-actions-cicd` | `~/.cursor/skills/optimize-github-actions-cicd/SKILL.md` |
+| `optimize-dockerfile` | `~/.cursor/skills/optimize-dockerfile/SKILL.md` |
 
-Each project follows the same lifecycle: inspect, prepare, push (same GitHub repo
-when applicable), measure one optimization at a time, EC2 cleanup after approval.
+Each skill includes `lab-measurements.md` pointing at this repo’s
+`measurements/` files and README summaries. Negative results (when **not** to
+apply a technique) are part of the guidance.
 
-## Post-lab deliverables (after all projects)
-
-Two Cursor Agent Skills will be authored from measured results and decision rules:
-
-1. **`optimize-github-actions-cicd`** — choose and apply CI/CD techniques
-   (caching, parallelism, artifacts, path filters, concurrency, runner sizing,
-   test sharding) based on stack, repo layout, and bottlenecks.
-2. **`optimize-dockerfile`** — apply Docker-only techniques (multi-stage,
-   layer ordering, BuildKit cache mounts, image reuse) when a Dockerfile is
-   present.
-
-Skills will reference this lab’s `measurements/` data and include when **not**
-to apply a technique (negative results are part of the guidance).
-
-Planned location: personal skills directory (`~/.cursor/skills/`) unless you
-prefer project-scoped skills under `.cursor/skills/` in this repository.
+To share with teammates, copy those folders into the project at
+`.cursor/skills/` or sync via git.

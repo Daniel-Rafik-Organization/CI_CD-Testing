@@ -45,6 +45,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: project4-default-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   IMAGE_NAME: project4-dotnet
   DOCKERFILE: ${{ inputs.dockerfile || 'Dockerfile' }}

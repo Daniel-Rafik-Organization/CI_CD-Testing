@@ -196,6 +196,26 @@ to layer ordering.
 
 Detailed results: `measurements/07-docker-layer-ordering.md`.
 
+## CI/CD timing: before vs after (Optimization 8 — path filtering)
+
+A documentation-only push previously started the complete default pipeline,
+including an unnecessary EC2 deployment. The same kind of commit was pushed
+after adding application-focused `paths` filters.
+
+| Metric for a docs-only commit | Before | After | Change |
+|---|---:|---:|---:|
+| Workflow wall time | 71 s | 0 s | **100% avoided** |
+| Total runner execution | 90 s | 0 s | **100% avoided** |
+| Image builds | 1 | 0 | eliminated |
+| EC2 deployments | 1 | 0 | eliminated |
+
+Relevant source and build-input changes still start the full pipeline. A
+separate manual dispatch succeeded, proving deliberate runs remain available.
+Path filters must be maintained as the project changes and require care when a
+filtered workflow is configured as a required branch-protection check.
+
+Detailed results: `measurements/08-path-filtering.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 

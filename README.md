@@ -216,6 +216,28 @@ filtered workflow is configured as a required branch-protection check.
 
 Detailed results: `measurements/08-path-filtering.md`.
 
+## CI/CD timing: before vs after (Optimization 9 — concurrency control)
+
+Two same-ref workflows were dispatched rapidly. Before concurrency control,
+both completed and both deployed. After adding a branch-specific concurrency
+group, GitHub cancelled the older run and only the newer run successfully
+deployed.
+
+| Metric for two overlapping runs | Before | After | Change |
+|---|---:|---:|---:|
+| Pair elapsed time | 74 s | 156 s | **82 s slower** |
+| Total runner execution | 182 s | 180 s | **1.1% lower** |
+| Completed image builds | 2 | 2 | unchanged |
+| Successful EC2 deployments | 2 | 1 | **duplicate prevented** |
+
+Cancellation occurred late, after the older run had built its image, so this
+sample saved almost no compute and queueing increased elapsed time. An
+uncontended pipeline still completed normally in 72 seconds. The setting is
+retained for deployment correctness: obsolete same-branch runs should not be
+allowed to complete after newer runs.
+
+Detailed results: `measurements/09-concurrency-control.md`.
+
 Future optimizations will get their own rows here and files under
 `measurements/`.
 
